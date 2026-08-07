@@ -25,12 +25,47 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Ensure Docker Hub repository exists
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          auth_payload="$(jq -n \
+            --arg username "$DOCKERHUB_USERNAME" \
+            --arg password "$DOCKERHUB_TOKEN" \
+            '{username: $username, password: $password}')"
+          hub_token="$(curl --fail-with-body --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data-binary "$auth_payload" \
+            https://hub.docker.com/v2/users/login/ | jq -r '.token // empty')"
+          test -n "$hub_token"
+
+          status="$(curl --silent --show-error \
+            --output /tmp/dockerhub-repository.json \
+            --write-out '%{http_code}' \
+            --header "Authorization: JWT $hub_token" \
+            https://hub.docker.com/v2/repositories/ztoolscenter/ztools-sync-server/)"
+          if [ "$status" = "404" ]; then
+            jq -n '{
+              namespace: "ztoolscenter",
+              name: "ztools-sync-server",
+              description: "Open-source self-hosted synchronization server for ZTools",
+              is_private: false
+            }' | curl --fail-with-body --silent --show-error \
+              --request POST \
+              --header "Authorization: JWT $hub_token" \
+              --header 'Content-Type: application/json' \
+              --data-binary @- \
+              https://hub.docker.com/v2/repositories/ztoolscenter/ >/dev/null
+          elif [ "$status" != "200" ]; then
+            cat /tmp/dockerhub-repository.json >&2
+            exit 1
+          fi
       - uses: docker/metadata-action@v5
-        id: meta
+        id: ghcr_meta
         with:
-          images: |
-            ghcr.io/ztoolscenter/ztools-sync-server
-            ztoolscenter/ztools-sync-server
+          images: ghcr.io/ztoolscenter/ztools-sync-server
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -41,5 +76,32 @@ jobs:
           file: deploy/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.ghcr_meta.outputs.tags }}
+          labels: ${{ steps.ghcr_meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Make GHCR package public
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --method PATCH \
+            /orgs/ZToolsCenter/packages/container/ztools-sync-server \
+            -f visibility=public
+      - uses: docker/metadata-action@v5
+        id: dockerhub_meta
+        with:
+          images: ztoolscenter/ztools-sync-server
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.dockerhub_meta.outputs.tags }}
+          labels: ${{ steps.dockerhub_meta.outputs.labels }}
+          cache-from: type=gha
