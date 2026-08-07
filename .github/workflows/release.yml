@@ -32,19 +32,19 @@ jobs:
         run: |
           set -euo pipefail
           auth_payload="$(jq -n \
-            --arg username "$DOCKERHUB_USERNAME" \
-            --arg password "$DOCKERHUB_TOKEN" \
-            '{username: $username, password: $password}')"
+            --arg identifier "$DOCKERHUB_USERNAME" \
+            --arg secret "$DOCKERHUB_TOKEN" \
+            '{identifier: $identifier, secret: $secret}')"
           hub_token="$(curl --fail-with-body --silent --show-error \
             --header 'Content-Type: application/json' \
             --data-binary "$auth_payload" \
-            https://hub.docker.com/v2/users/login/ | jq -r '.token // empty')"
+            https://hub.docker.com/v2/auth/token | jq -r '.access_token // empty')"
           test -n "$hub_token"
 
           status="$(curl --silent --show-error \
             --output /tmp/dockerhub-repository.json \
             --write-out '%{http_code}' \
-            --header "Authorization: JWT $hub_token" \
+            --header "Authorization: Bearer $hub_token" \
             https://hub.docker.com/v2/repositories/ztoolscenter/ztools-sync-server/)"
           if [ "$status" = "404" ]; then
             jq -n '{
@@ -54,7 +54,7 @@ jobs:
               is_private: false
             }' | curl --fail-with-body --silent --show-error \
               --request POST \
-              --header "Authorization: JWT $hub_token" \
+              --header "Authorization: Bearer $hub_token" \
               --header 'Content-Type: application/json' \
               --data-binary @- \
               https://hub.docker.com/v2/repositories/ztoolscenter/ >/dev/null
