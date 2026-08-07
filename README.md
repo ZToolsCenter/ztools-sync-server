@@ -16,7 +16,7 @@ docker compose up -d
 The service listens on `127.0.0.1:23517` by default. In ZTools, open Settings, choose
 `Private deployment`, enter the server address and sign in with the account configured in `.env`.
 
-Docker Compose pulls `ztoolscenter/ztools-sync-server` from Docker Hub by default. To use GHCR
+Docker Compose pulls `happyzxing/ztools-sync-server` from Docker Hub by default. To use GHCR
 instead, set `ZTOOLS_SYNC_IMAGE=ghcr.io/ztoolscenter/ztools-sync-server` in `.env`.
 
 The first start creates the configured owner account. Subsequent starts never reset an existing

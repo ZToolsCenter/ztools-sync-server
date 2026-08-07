@@ -25,43 +25,6 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Ensure Docker Hub repository exists
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          auth_payload="$(jq -n \
-            --arg identifier "$DOCKERHUB_USERNAME" \
-            --arg secret "$DOCKERHUB_TOKEN" \
-            '{identifier: $identifier, secret: $secret}')"
-          hub_token="$(curl --fail-with-body --silent --show-error \
-            --header 'Content-Type: application/json' \
-            --data-binary "$auth_payload" \
-            https://hub.docker.com/v2/auth/token | jq -r '.access_token // empty')"
-          test -n "$hub_token"
-
-          status="$(curl --silent --show-error \
-            --output /tmp/dockerhub-repository.json \
-            --write-out '%{http_code}' \
-            --header "Authorization: Bearer $hub_token" \
-            https://hub.docker.com/v2/repositories/ztoolscenter/ztools-sync-server/)"
-          if [ "$status" = "404" ]; then
-            jq -n '{
-              namespace: "ztoolscenter",
-              name: "ztools-sync-server",
-              description: "Open-source self-hosted synchronization server for ZTools",
-              is_private: false
-            }' | curl --fail-with-body --silent --show-error \
-              --request POST \
-              --header "Authorization: Bearer $hub_token" \
-              --header 'Content-Type: application/json' \
-              --data-binary @- \
-              https://hub.docker.com/v2/repositories/ztoolscenter/ >/dev/null
-          elif [ "$status" != "200" ]; then
-            cat /tmp/dockerhub-repository.json >&2
-            exit 1
-          fi
       - uses: docker/metadata-action@v5
         id: ghcr_meta
         with:
@@ -91,7 +54,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: dockerhub_meta
         with:
-          images: ztoolscenter/ztools-sync-server
+          images: happyzxing/ztools-sync-server
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

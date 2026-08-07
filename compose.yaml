@@ -1,6 +1,6 @@
 services:
   ztools-sync:
-    image: ${ZTOOLS_SYNC_IMAGE:-ztoolscenter/ztools-sync-server}:${ZTOOLS_SYNC_VERSION:-latest}
+    image: ${ZTOOLS_SYNC_IMAGE:-happyzxing/ztools-sync-server}:${ZTOOLS_SYNC_VERSION:-latest}
     restart: unless-stopped
     ports:
       - "127.0.0.1:23517:23517"
