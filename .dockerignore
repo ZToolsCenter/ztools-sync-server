@@ -1,0 +1,9 @@
+.git
+.github
+.DS_Store
+.env
+data
+*.db
+*.db-shm
+*.db-wal
+ztools-sync-server

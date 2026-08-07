@@ -1,0 +1,21 @@
+services:
+  ztools-sync:
+    image: ${ZTOOLS_SYNC_IMAGE:-ztoolscenter/ztools-sync-server}:${ZTOOLS_SYNC_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:23517:23517"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      ZTOOLS_USERNAME: ${ZTOOLS_USERNAME:-root}
+      ZTOOLS_PASSWORD: ${ZTOOLS_PASSWORD:?set ZTOOLS_PASSWORD in .env}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+    volumes:
+      - ztools-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  ztools-data:
