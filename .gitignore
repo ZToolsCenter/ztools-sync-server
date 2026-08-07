@@ -4,4 +4,4 @@ data/
 *.db
 *.db-shm
 *.db-wal
-ztools-sync-server
+/ztools-sync-server
