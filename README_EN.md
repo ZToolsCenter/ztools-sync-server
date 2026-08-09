@@ -16,7 +16,7 @@ docker volume create ztools-data
 docker run -d \
   --name ztools-sync-server \
   --restart unless-stopped \
-  -p 127.0.0.1:23517:23517 \
+  -p 23517:23517 \
   -e TZ=Asia/Shanghai \
   -e ZTOOLS_USERNAME=root \
   -e ZTOOLS_PASSWORD='replace-with-a-strong-password' \
@@ -85,7 +85,7 @@ docker compose logs -f ztools-sync
 
 ### Connect ZTools
 
-The service listens on `127.0.0.1:23517` by default. In ZTools, open Settings, choose `Private deployment`, enter the server address, and sign in with the `ZTOOLS_USERNAME` and `ZTOOLS_PASSWORD` configured above.
+Docker maps the service to port `23517` on all host network interfaces by default so that other devices can reach it. In ZTools, open Settings, choose `Private deployment`, enter the server's LAN address or domain name (for example, `http://192.168.1.10:23517`), and sign in with the `ZTOOLS_USERNAME` and `ZTOOLS_PASSWORD` configured above.
 
 Docker Compose pulls `happyzxing/ztools-sync-server` from Docker Hub by default. To use GHCR instead, add the following setting to `.env`:
 
@@ -116,7 +116,9 @@ You can also provide a complete MySQL DSN through `MYSQL_DSN`.
 
 ## Network Security
 
-The server provides HTTP and WebSocket endpoints but does not terminate TLS. Keep the default loopback port mapping for local-only use. For public access, place Caddy, Nginx, or another TLS reverse proxy in front of the service and connect using `https://` or `wss://`.
+The server provides HTTP and WebSocket endpoints but does not terminate TLS. The quick-start configuration maps port `23517` on all host network interfaces for trusted LAN access. Configure the host firewall so that only devices that need the service can reach this port.
+
+For public access, place Caddy, Nginx, or another TLS reverse proxy in front of the service and connect using `https://` or `wss://`. For local-only access, change the port mapping to `127.0.0.1:23517:23517`.
 
 Do not expose the unencrypted `23517` port directly to the public internet.
 

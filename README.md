@@ -16,7 +16,7 @@ docker volume create ztools-data
 docker run -d \
   --name ztools-sync-server \
   --restart unless-stopped \
-  -p 127.0.0.1:23517:23517 \
+  -p 23517:23517 \
   -e TZ=Asia/Shanghai \
   -e ZTOOLS_USERNAME=root \
   -e ZTOOLS_PASSWORD='replace-with-a-strong-password' \
@@ -85,7 +85,7 @@ docker compose logs -f ztools-sync
 
 ### 连接 ZTools
 
-服务默认监听 `127.0.0.1:23517`。在 ZTools 中打开设置，选择“私有部署”，填写服务器地址，并使用上面配置的 `ZTOOLS_USERNAME` 和 `ZTOOLS_PASSWORD` 登录。
+Docker 默认将服务映射到宿主机所有网络接口的 `23517` 端口，以便其他设备访问。在 ZTools 中打开设置，选择“私有部署”，填写服务器的局域网 IP 或域名（例如 `http://192.168.1.10:23517`），并使用上面配置的 `ZTOOLS_USERNAME` 和 `ZTOOLS_PASSWORD` 登录。
 
 Docker Compose 默认从 Docker Hub 拉取 `happyzxing/ztools-sync-server`。如需使用 GHCR，在 `.env` 中添加：
 
@@ -116,7 +116,9 @@ MYSQL_PASSWORD=replace-me
 
 ## 网络安全
 
-服务提供 HTTP 和 WebSocket 接口，但不负责 TLS 终止。仅本机使用时请保留默认的回环地址端口映射。需要从公网访问时，应在服务前配置 Caddy、Nginx 或其他 TLS 反向代理，并使用 `https://` 或 `wss://` 连接。
+服务提供 HTTP 和 WebSocket 接口，但不负责 TLS 终止。快速启动示例会将 `23517` 端口映射到宿主机所有网络接口，适合受信任的局域网；请同时确认系统防火墙只允许需要访问的设备。
+
+需要从公网访问时，应在服务前配置 Caddy、Nginx 或其他 TLS 反向代理，并使用 `https://` 或 `wss://` 连接。仅允许本机访问时，可以将端口映射改为 `127.0.0.1:23517:23517`。
 
 不要直接将未加密的 `23517` 端口暴露到公网。
 
