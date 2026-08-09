@@ -4,8 +4,6 @@ English | [简体中文](./README.md)
 
 ZTools Sync Server is the open-source, self-hosted synchronization backend for ZTools. It synchronizes plugin documents, document revision histories, checkpoints, and attachments.
 
-This repository contains only the synchronization capabilities required for a standalone deployment. It does not include the ZTools plugin market, comments, notifications, application updates, analytics, or the SaaS administration console.
-
 ## Quick Start
 
 ### Start Directly with Docker
