@@ -94,6 +94,22 @@ func (h *Hub) Remove(uid string, deviceID string, conn *webSocketConnection) {
 	}
 }
 
+// DisconnectUser removes and closes every active connection for one user.
+func (h *Hub) DisconnectUser(uid string) {
+	h.mu.Lock()
+	pool := h.pools[uid]
+	delete(h.pools, uid)
+	connections := make([]*webSocketConnection, 0, len(pool))
+	for _, conn := range pool {
+		connections = append(connections, conn)
+	}
+	h.mu.Unlock()
+
+	for _, conn := range connections {
+		_ = conn.Close()
+	}
+}
+
 /**
  * Broadcast 将 change 发送给同一用户除来源设备外的所有在线连接。
  * @param change 已提交的同步广播消息。
