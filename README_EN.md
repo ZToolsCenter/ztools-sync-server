@@ -8,7 +8,54 @@ This repository contains only the synchronization capabilities required for a st
 
 ## Quick Start
 
-Install Docker and Docker Compose v2, then run:
+### Start Directly with Docker
+
+This method does not require downloading the source code. Install Docker, replace the example password with your own strong password, and run:
+
+```bash
+docker volume create ztools-data
+
+docker run -d \
+  --name ztools-sync-server \
+  --restart unless-stopped \
+  -p 127.0.0.1:23517:23517 \
+  -e TZ=Asia/Shanghai \
+  -e ZTOOLS_USERNAME=root \
+  -e ZTOOLS_PASSWORD='replace-with-a-strong-password' \
+  -e ALLOW_REGISTRATION=false \
+  -v ztools-data:/data \
+  --read-only \
+  --tmpfs /tmp:size=16m,mode=1777 \
+  --security-opt no-new-privileges:true \
+  happyzxing/ztools-sync-server:latest
+
+docker ps --filter name=ztools-sync-server
+curl http://127.0.0.1:23517/health
+```
+
+The server is ready when the health endpoint returns `"status":"ok"`. To follow the startup logs, run:
+
+```bash
+docker logs -f ztools-sync-server
+```
+
+### Configure the Login Account
+
+Login credentials are passed through environment variables:
+
+| Environment variable | Required | Description |
+| --- | --- | --- |
+| `ZTOOLS_USERNAME` | On first start | Owner username, for example `root` or `admin` |
+| `ZTOOLS_PASSWORD` | On first start | Owner password; use a strong password and single quotes when it contains special characters |
+| `ALLOW_REGISTRATION` | No | Whether other users may register; defaults to `false` |
+
+`ZTOOLS_USERNAME` and `ZTOOLS_PASSWORD` must be configured together. If the database contains no users, the service creates this owner account on its first start.
+
+Once the account has been created, restarting the container or changing these environment variables does not reset the password stored in the database. Keep the credentials used for the first start in a safe place.
+
+### Start with Docker Compose
+
+The Compose setup pulls the published Docker image directly and does not compile the Go source code locally. Install Docker Compose v2, then run:
 
 ```bash
 git clone https://github.com/ZToolsCenter/ztools-sync-server.git
@@ -16,7 +63,15 @@ cd ztools-sync-server
 cp .env.example .env
 ```
 
-Open `.env` and replace `ZTOOLS_PASSWORD` with a strong password. Then start the service:
+Open `.env` and configure at least these values:
+
+```env
+ZTOOLS_USERNAME=root
+ZTOOLS_PASSWORD=replace-with-a-strong-password
+ALLOW_REGISTRATION=false
+```
+
+Then start and check the service:
 
 ```bash
 docker compose up -d
@@ -24,13 +79,15 @@ docker compose ps
 curl http://127.0.0.1:23517/health
 ```
 
-The server is ready when the health endpoint returns `"status":"ok"`. To follow the startup logs, run:
+To follow logs for the Compose deployment:
 
 ```bash
 docker compose logs -f ztools-sync
 ```
 
-The service listens on `127.0.0.1:23517` by default. In ZTools, open Settings, choose `Private deployment`, enter the server address, and sign in with the account configured in `.env`.
+### Connect ZTools
+
+The service listens on `127.0.0.1:23517` by default. In ZTools, open Settings, choose `Private deployment`, enter the server address, and sign in with the `ZTOOLS_USERNAME` and `ZTOOLS_PASSWORD` configured above.
 
 Docker Compose pulls `happyzxing/ztools-sync-server` from Docker Hub by default. To use GHCR instead, add the following setting to `.env`:
 
@@ -38,7 +95,7 @@ Docker Compose pulls `happyzxing/ztools-sync-server` from Docker Hub by default.
 ZTOOLS_SYNC_IMAGE=ghcr.io/ztoolscenter/ztools-sync-server
 ```
 
-The first start creates the owner account specified by `ZTOOLS_USERNAME` and `ZTOOLS_PASSWORD`. Subsequent starts never reset the password of an existing account from environment variables. Public registration is disabled by default.
+When using `docker run`, replace the image name at the end of the command with `ghcr.io/ztoolscenter/ztools-sync-server:latest`.
 
 ## Storage
 
@@ -67,15 +124,25 @@ Do not expose the unencrypted `23517` port directly to the public internet.
 
 ## Backup
 
-Stop the container before backing up the SQLite data volume:
+Stop the container before backing up the SQLite data volume. For a direct Docker deployment, run:
+
+```bash
+docker stop ztools-sync-server
+```
+
+For a Compose deployment, run:
 
 ```bash
 docker compose stop ztools-sync
 ```
 
-Copying only `ztools.db` while the service is running can miss transactions still present in the WAL file. Start the service again after the backup completes:
+Copying only `ztools.db` while the service is running can miss transactions still present in the WAL file. After the backup completes, use the corresponding command to start the service again:
 
 ```bash
+# Direct Docker deployment
+docker start ztools-sync-server
+
+# Docker Compose
 docker compose start ztools-sync
 ```
 

@@ -8,7 +8,54 @@ ZTools Sync Server 是 ZTools 开源、可自行部署的同步服务端，用�
 
 ## 快速启动
 
-请先安装 Docker 和 Docker Compose v2，然后执行：
+### 使用 Docker 直接启动
+
+这种方式无需下载源码。请先安装 Docker，然后执行以下命令；启动前必须将示例密码替换为你自己的强密码：
+
+```bash
+docker volume create ztools-data
+
+docker run -d \
+  --name ztools-sync-server \
+  --restart unless-stopped \
+  -p 127.0.0.1:23517:23517 \
+  -e TZ=Asia/Shanghai \
+  -e ZTOOLS_USERNAME=root \
+  -e ZTOOLS_PASSWORD='replace-with-a-strong-password' \
+  -e ALLOW_REGISTRATION=false \
+  -v ztools-data:/data \
+  --read-only \
+  --tmpfs /tmp:size=16m,mode=1777 \
+  --security-opt no-new-privileges:true \
+  happyzxing/ztools-sync-server:latest
+
+docker ps --filter name=ztools-sync-server
+curl http://127.0.0.1:23517/health
+```
+
+健康检查返回 `"status":"ok"` 即表示启动成功。如需查看启动日志：
+
+```bash
+docker logs -f ztools-sync-server
+```
+
+### 配置登录账号和密码
+
+账号信息通过环境变量传入：
+
+| 环境变量 | 是否必填 | 说明 |
+| --- | --- | --- |
+| `ZTOOLS_USERNAME` | 首次启动必填 | 所有者账号，例如 `root` 或 `admin` |
+| `ZTOOLS_PASSWORD` | 首次启动必填 | 所有者密码，请使用强密码；包含特殊字符时应使用单引号包裹 |
+| `ALLOW_REGISTRATION` | 否 | 是否允许其他用户注册，默认 `false` |
+
+`ZTOOLS_USERNAME` 和 `ZTOOLS_PASSWORD` 必须同时配置。数据库中还没有用户时，服务会在首次启动时创建这个所有者账号。
+
+账号创建后，重启容器或修改环境变量都不会重置数据库中已有账号的密码。请妥善保存第一次启动时使用的账号和密码。
+
+### 使用 Docker Compose 启动
+
+Compose 方式会直接拉取已发布的 Docker 镜像，不会在本地编译 Go 源码。请先安装 Docker Compose v2，然后执行：
 
 ```bash
 git clone https://github.com/ZToolsCenter/ztools-sync-server.git
@@ -16,7 +63,15 @@ cd ztools-sync-server
 cp .env.example .env
 ```
 
-打开 `.env`，将 `ZTOOLS_PASSWORD` 修改为强密码。然后启动服务：
+打开 `.env`，至少修改以下配置：
+
+```env
+ZTOOLS_USERNAME=root
+ZTOOLS_PASSWORD=replace-with-a-strong-password
+ALLOW_REGISTRATION=false
+```
+
+然后启动并检查服务：
 
 ```bash
 docker compose up -d
@@ -24,13 +79,15 @@ docker compose ps
 curl http://127.0.0.1:23517/health
 ```
 
-健康检查返回 `"status":"ok"` 即表示启动成功。如需查看启动日志：
+Compose 方式查看日志：
 
 ```bash
 docker compose logs -f ztools-sync
 ```
 
-服务默认监听 `127.0.0.1:23517`。在 ZTools 中打开设置，选择“私有部署”，填写服务器地址，并使用 `.env` 中配置的账户登录。
+### 连接 ZTools
+
+服务默认监听 `127.0.0.1:23517`。在 ZTools 中打开设置，选择“私有部署”，填写服务器地址，并使用上面配置的 `ZTOOLS_USERNAME` 和 `ZTOOLS_PASSWORD` 登录。
 
 Docker Compose 默认从 Docker Hub 拉取 `happyzxing/ztools-sync-server`。如需使用 GHCR，在 `.env` 中添加：
 
@@ -38,7 +95,7 @@ Docker Compose 默认从 Docker Hub 拉取 `happyzxing/ztools-sync-server`。如
 ZTOOLS_SYNC_IMAGE=ghcr.io/ztoolscenter/ztools-sync-server
 ```
 
-首次启动时会创建 `ZTOOLS_USERNAME` 和 `ZTOOLS_PASSWORD` 指定的所有者账户。后续启动不会使用环境变量重置已有账户的密码。公开注册默认关闭。
+使用 `docker run` 时，可以将命令末尾的镜像名称替换为 `ghcr.io/ztoolscenter/ztools-sync-server:latest`。
 
 ## 存储
 
@@ -67,15 +124,25 @@ MYSQL_PASSWORD=replace-me
 
 ## 备份
 
-备份 SQLite 数据卷前应先停止容器：
+备份 SQLite 数据卷前应先停止容器。使用 Docker 直接启动时执行：
+
+```bash
+docker stop ztools-sync-server
+```
+
+使用 Compose 启动时执行：
 
 ```bash
 docker compose stop ztools-sync
 ```
 
-服务运行时只复制 `ztools.db` 可能遗漏仍在 WAL 文件中的事务。备份完成后重新启动：
+服务运行时只复制 `ztools.db` 可能遗漏仍在 WAL 文件中的事务。备份完成后，按对应方式重新启动：
 
 ```bash
+# Docker 直接启动
+docker start ztools-sync-server
+
+# Docker Compose
 docker compose start ztools-sync
 ```
 
