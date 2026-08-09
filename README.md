@@ -1,34 +1,52 @@
 # ZTools Sync Server
 
-ZTools Sync Server is the open-source, self-hosted synchronization backend for ZTools.
-It synchronizes plugin documents, revision histories, checkpoints and attachments. It does not
-include the ZTools plugin market, comments, notifications, application updates, analytics or the
-SaaS administration console.
+[English](./README_EN.md) | 简体中文
 
-## Quick Start
+ZTools Sync Server 是 ZTools 开源、可自行部署的同步服务端，用于同步插件文档、文档修订历史、同步检查点和附件。
+
+本项目只包含独立部署所需的同步能力，不包含 ZTools 插件市场、评论、通知、应用更新、数据分析或 SaaS 管理后台。
+
+## 快速启动
+
+请先安装 Docker 和 Docker Compose v2，然后执行：
 
 ```bash
+git clone https://github.com/ZToolsCenter/ztools-sync-server.git
+cd ztools-sync-server
 cp .env.example .env
-# Set a strong ZTOOLS_PASSWORD in .env
-docker compose up -d
 ```
 
-The service listens on `127.0.0.1:23517` by default. In ZTools, open Settings, choose
-`Private deployment`, enter the server address and sign in with the account configured in `.env`.
+打开 `.env`，将 `ZTOOLS_PASSWORD` 修改为强密码。然后启动服务：
 
-Docker Compose pulls `happyzxing/ztools-sync-server` from Docker Hub by default. To use GHCR
-instead, set `ZTOOLS_SYNC_IMAGE=ghcr.io/ztoolscenter/ztools-sync-server` in `.env`.
+```bash
+docker compose up -d
+docker compose ps
+curl http://127.0.0.1:23517/health
+```
 
-The first start creates the configured owner account. Subsequent starts never reset an existing
-password from environment variables. Public registration is disabled by default.
+健康检查返回 `"status":"ok"` 即表示启动成功。如需查看启动日志：
 
-## Storage
+```bash
+docker compose logs -f ztools-sync
+```
 
-SQLite is the default and stores all data in the `ztools-data` Docker volume. The server enables
-WAL mode, a five-second busy timeout and one database connection for predictable operation on
-small machines. Run only one container replica when using SQLite.
+服务默认监听 `127.0.0.1:23517`。在 ZTools 中打开设置，选择“私有部署”，填写服务器地址，并使用 `.env` 中配置的账户登录。
 
-MySQL is also supported:
+Docker Compose 默认从 Docker Hub 拉取 `happyzxing/ztools-sync-server`。如需使用 GHCR，在 `.env` 中添加：
+
+```env
+ZTOOLS_SYNC_IMAGE=ghcr.io/ztoolscenter/ztools-sync-server
+```
+
+首次启动时会创建 `ZTOOLS_USERNAME` 和 `ZTOOLS_PASSWORD` 指定的所有者账户。后续启动不会使用环境变量重置已有账户的密码。公开注册默认关闭。
+
+## 存储
+
+默认使用 SQLite，所有数据保存在 Docker 的 `ztools-data` 数据卷中。服务会启用 WAL 模式、5 秒 busy timeout，并将数据库连接数限制为 1，以便在低配置设备上稳定运行。
+
+使用 SQLite 时只能运行一个服务容器，不要启动多个副本共同访问同一个数据卷。
+
+项目也支持 MySQL，运行二进制或自定义容器部署时可配置：
 
 ```env
 DB_DRIVER=mysql
@@ -39,27 +57,39 @@ MYSQL_USER=ztools
 MYSQL_PASSWORD=replace-me
 ```
 
-## Network Security
+也可以通过 `MYSQL_DSN` 直接提供完整的 MySQL DSN。
 
-The server provides HTTP and WebSocket endpoints but does not terminate TLS. Keep the default
-loopback port mapping for local use. For remote access, put it behind Caddy, Nginx or another TLS
-reverse proxy and connect with `https://` or `wss://`.
+## 网络安全
 
-## Backup
+服务提供 HTTP 和 WebSocket 接口，但不负责 TLS 终止。仅本机使用时请保留默认的回环地址端口映射。需要从公网访问时，应在服务前配置 Caddy、Nginx 或其他 TLS 反向代理，并使用 `https://` 或 `wss://` 连接。
 
-Stop the container before backing up the `ztools-data` volume. Copying only `ztools.db` while the
-service is running can miss transactions still present in the WAL file.
+不要直接将未加密的 `23517` 端口暴露到公网。
 
-## Development
+## 备份
+
+备份 SQLite 数据卷前应先停止容器：
+
+```bash
+docker compose stop ztools-sync
+```
+
+服务运行时只复制 `ztools.db` 可能遗漏仍在 WAL 文件中的事务。备份完成后重新启动：
+
+```bash
+docker compose start ztools-sync
+```
+
+## 本地开发
+
+需要 Go 1.23 或更高版本：
 
 ```bash
 go test ./...
 go run ./cmd/ztools-sync-server
 ```
 
-The public packages are also consumed by the private ZTools SaaS server. Changes to authentication,
-the synchronization protocol or database behavior must keep both SQLite and MySQL tests passing.
+公共包也会被 ZTools SaaS 服务端复用。修改认证、同步协议或数据库行为时，必须确保 SQLite 和 MySQL 测试均通过。
 
-## License
+## 许可证
 
-Licensed under the Mozilla Public License 2.0. See [LICENSE](LICENSE).
+本项目使用 Mozilla Public License 2.0，详见 [LICENSE](LICENSE)。
