@@ -191,10 +191,12 @@ func updateDocumentProjection(tx *gorm.DB, uid string, docID string) (*models.Do
 	if docJSON == "" {
 		docJSON = "{}"
 	}
+	docJSONBytes := int64(len(docJSON))
 	doc := models.Document{
 		UID:          uid,
 		DocID:        docID,
 		DocJSON:      docJSON,
+		DocJSONBytes: &docJSONBytes,
 		Rev:          winnerRevision.Rev,
 		LastModified: winnerRevision.LastModified,
 		Deleted:      winnerRevision.Deleted,

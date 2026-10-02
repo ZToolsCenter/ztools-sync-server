@@ -55,6 +55,9 @@ func main() {
 	syncService := syncsvc.NewServiceWithOptions(repo, syncsvc.ServiceOptions{
 		MaxConcurrentPushes: 1,
 	})
+	backfillContext, stopBackfill := context.WithCancel(context.Background())
+	defer stopBackfill()
+	syncService.StartDocumentJSONBytesBackfill(backfillContext)
 	hub := transport.NewHub()
 	router := transport.NewRouter(authService, syncService, hub, transport.RouterOptions{
 		AllowRegistration: cfg.AllowRegistration,

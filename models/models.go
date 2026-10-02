@@ -26,6 +26,7 @@ type Document struct {
 	UID          string `gorm:"column:uid;type:varchar(191);primaryKey" json:"uid"`
 	DocID        string `gorm:"column:doc_id;type:varchar(255);primaryKey" json:"doc_id"`
 	DocJSON      string `gorm:"column:doc_json;not null" json:"doc_json"`
+	DocJSONBytes *int64 `gorm:"column:doc_json_bytes" json:"-"`
 	Rev          string `gorm:"column:rev;type:varchar(191);not null" json:"rev"`
 	LastModified int64  `gorm:"column:last_modified;not null" json:"last_modified"`
 	Deleted      bool   `gorm:"column:deleted;default:0" json:"deleted"`
