@@ -107,26 +107,6 @@ func buildDocChangeFromRevisionWithAttachmentsAndHistory(revision models.Documen
 	}
 }
 
-func revisionHistoryFromRevisions(currentRev string, revisions []models.DocumentRevision) []string {
-	byRev := map[string]models.DocumentRevision{}
-	for _, revision := range revisions {
-		byRev[revision.Rev] = revision
-	}
-	history := []string{}
-	seen := map[string]bool{}
-	rev := currentRev
-	for rev != "" && !seen[rev] {
-		history = append(history, rev)
-		seen[rev] = true
-		revision, ok := byRev[rev]
-		if !ok {
-			break
-		}
-		rev = revision.ParentRev
-	}
-	return history
-}
-
 /**
  * updateDocumentProjection 重新选举文档 winner，并仅按主键切换旧、新 winner 标记。
  * @param tx 当前数据库事务。

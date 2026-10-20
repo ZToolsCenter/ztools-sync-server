@@ -365,6 +365,7 @@ func (s *Service) Changes(uid string, since int64, clientProtocolVersion int) ([
 		return nil, since, err
 	}
 	changes := make([]FullChangeEntry, 0, len(logs))
+	histories := newRevisionHistoryReader(s.repo, uid)
 	for _, entry := range logs {
 		if clientProtocolVersion >= store.ProtocolVersion || entry.ProtocolVersion >= store.ProtocolVersion {
 			revision, err := s.repo.Revision(uid, entry.DocID, entry.Rev)
@@ -378,11 +379,10 @@ func (s *Service) Changes(uid string, since int64, clientProtocolVersion int) ([
 			if err != nil {
 				return nil, since, err
 			}
-			revisions, err := s.repo.DocumentRevisions(uid, entry.DocID)
+			history, err := histories.History(entry.DocID, entry.Rev)
 			if err != nil {
 				return nil, since, err
 			}
-			history := revisionHistoryFromRevisions(entry.Rev, revisions)
 			changes = append(changes, buildDocChangeFromRevisionWithAttachmentsAndHistory(revision, attachments, history, entry.Seq, entry.WinnerRev, parseResolution(entry.Resolution)))
 		}
 	}
@@ -403,6 +403,7 @@ func (s *Service) SnapshotChanges(uid string) ([]FullChangeEntry, error) {
 		grouped[row.DocID] = append(grouped[row.DocID], row)
 	}
 	changes := make([]FullChangeEntry, 0, len(rows))
+	histories := newRevisionHistoryReader(s.repo, uid)
 	for _, leaves := range grouped {
 		winner := chooseWinner(leaves)
 		winnerRev := ""
@@ -414,11 +415,10 @@ func (s *Service) SnapshotChanges(uid string) ([]FullChangeEntry, error) {
 			if err != nil {
 				return nil, err
 			}
-			revisions, err := s.repo.DocumentRevisions(uid, revision.DocID)
+			history, err := histories.History(revision.DocID, revision.Rev)
 			if err != nil {
 				return nil, err
 			}
-			history := revisionHistoryFromRevisions(revision.Rev, revisions)
 			changes = append(changes, buildDocChangeFromRevisionWithAttachmentsAndHistory(revision, attachments, history, 0, winnerRev, nil))
 		}
 	}

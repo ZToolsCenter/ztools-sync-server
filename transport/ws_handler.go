@@ -96,6 +96,11 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var uid string
 	var deviceID string
+	defer func() {
+		if uid != "" && deviceID != "" {
+			h.hub.Remove(uid, deviceID, peer)
+		}
+	}()
 	var authenticated atomic.Bool
 	clientProtocolVersion := 1
 	authTimer := time.AfterFunc(30*time.Second, func() {
@@ -109,9 +114,6 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for {
 		var msg syncsvc.ClientMessage
 		if err := conn.ReadJSON(&msg); err != nil {
-			if uid != "" && deviceID != "" {
-				h.hub.Remove(uid, deviceID, peer)
-			}
 			return
 		}
 		switch msg.Type {
@@ -163,7 +165,9 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 				seq, _ := h.sync.MaxSeq(uid)
 				h.observeActivity(uid, deviceID, r)
-				_ = peer.WriteJSON(syncsvc.ServerMessage{Type: "changes", Changes: changes, Seq: seq, Snapshot: true, Reset: true, SyncEpoch: h.sync.SyncEpoch()})
+				if err := peer.WriteChanges(syncsvc.ServerMessage{Type: "changes", Changes: changes, Seq: seq, Snapshot: true, Reset: true, SyncEpoch: h.sync.SyncEpoch()}); err != nil {
+					return
+				}
 				continue
 			}
 			changes, seq, err := h.sync.Changes(uid, msg.Since, clientProtocolVersion)
@@ -172,7 +176,9 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			h.observeActivity(uid, deviceID, r)
-			_ = peer.WriteJSON(syncsvc.ServerMessage{Type: "changes", Changes: changes, Seq: seq, SyncEpoch: h.sync.SyncEpoch()})
+			if err := peer.WriteChanges(syncsvc.ServerMessage{Type: "changes", Changes: changes, Seq: seq, SyncEpoch: h.sync.SyncEpoch()}); err != nil {
+				return
+			}
 		case "get_checkpoint":
 			if uid == "" {
 				_ = peer.WriteJSON(syncsvc.ServerMessage{Type: "error", Message: "Not authenticated"})
