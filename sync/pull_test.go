@@ -33,6 +33,16 @@ func seedPullChain(t testing.TB, db *gorm.DB, count int) {
 	if err := db.CreateInBatches(&logs, 128).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Model(&models.DocumentRevision{}).Where("uid = ? AND doc_id = ?", "owner", "doc").Update("is_leaf", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.DocumentRevision{}).Where("uid = ? AND doc_id = ? AND rev = ?", "owner", "doc", revisions[count-1].Rev).Update("is_leaf", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	bodyBytes := int64(2)
+	if err := db.Create(&models.Document{UID: "owner", DocID: "doc", Rev: revisions[count-1].Rev, DocJSON: "{}", DocJSONBytes: &bodyBytes}).Error; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestLargePullRetainsBoundedHistoryMemory(t *testing.T) {
@@ -274,6 +284,41 @@ func TestHistoryBudgetFailsWithoutTruncatingAncestry(t *testing.T) {
 	err := reader.WithHistory("doc", "3-fixture", func([]string) error { called = true; return nil })
 	if !errors.Is(err, ErrPullHistoryTooLarge) || called || len(reader.entries) != 0 {
 		t.Fatalf("over-budget history was silently truncated or cached: called=%t entries=%d err=%v", called, len(reader.entries), err)
+	}
+}
+
+func TestLargeBacklogUsesExistingSnapshotOnlyForV2(t *testing.T) {
+	db := openRevisionHistoryDB(t)
+	seedPullChain(t, db, maxIncrementalPullChanges+1)
+	service := NewService(repository.New(db))
+	for _, protocol := range []int{1, 2} {
+		got, err := service.ShouldSnapshotPull(context.Background(), "owner", 0, protocol)
+		if err != nil || got != (protocol == 2) {
+			t.Fatalf("snapshot admission for protocol %d: %v %v", protocol, got, err)
+		}
+	}
+	got, err := service.ShouldSnapshotPull(context.Background(), "owner", maxIncrementalPullChanges, 2)
+	if err != nil || got {
+		t.Fatalf("small resumed backlog was forced to snapshot: %v %v", got, err)
+	}
+	if err := db.Model(&models.Changelog{}).Where("uid = ? AND seq = ?", "owner", maxIncrementalPullChanges+1).Update("doc_json_bytes", maxIncrementalPullBodyBytes+1).Error; err != nil {
+		t.Fatal(err)
+	}
+	got, err = service.ShouldSnapshotPull(context.Background(), "owner", maxIncrementalPullChanges, 2)
+	if err != nil || !got {
+		t.Fatalf("large body backlog was not protected: %v %v", got, err)
+	}
+	if err := db.Model(&models.Document{}).Where("uid = ?", "owner").Update("doc_json_bytes", maxAutomaticSnapshotBodyBytes+1).Error; err != nil {
+		t.Fatal(err)
+	}
+	got, err = service.ShouldSnapshotPull(context.Background(), "owner", 0, 2)
+	if err != nil || got {
+		t.Fatalf("automatic snapshot ignored the account body-size budget: %v %v", got, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := service.ShouldSnapshotPull(ctx, "owner", 0, 2); !errors.Is(err, context.Canceled) {
+		t.Fatalf("admission ignored cancellation: %v", err)
 	}
 }
 

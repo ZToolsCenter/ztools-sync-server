@@ -13,12 +13,37 @@ import (
 
 const pullPageSize = 128
 const MaxPullDuration = 5 * time.Minute
+const maxIncrementalPullChanges = 512
+const maxIncrementalPullBodyBytes = 32 * 1024 * 1024
+const maxAutomaticSnapshotBodyBytes = 16 * 1024 * 1024
 
 var errMissingPullRevision = errors.New("pull revision no longer exists")
 
 // ChangeConsumer consumes one change before the next is built. RevisionHistory
 // is borrowed until the callback returns; consumers retaining changes must copy it.
 type ChangeConsumer func(FullChangeEntry) error
+
+// ShouldSnapshotPull uses the existing v2 reset/snapshot response for a large
+// backlog. It preserves every current branch, tombstone and complete ancestry,
+// while avoiding a multi-gigabyte response of intermediate historical bodies.
+// V1 clients retain their existing incremental response semantics.
+func (s *Service) ShouldSnapshotPull(ctx context.Context, uid string, since int64, clientProtocolVersion int) (bool, error) {
+	if clientProtocolVersion < store.ProtocolVersion {
+		return false, nil
+	}
+	repo := s.repo.WithContext(ctx)
+	count, bodyBytes, err := repo.IncrementalPullSizeHint(uid, since, maxIncrementalPullChanges+1)
+	if err != nil || count <= maxIncrementalPullChanges && bodyBytes <= maxIncrementalPullBodyBytes {
+		return false, err
+	}
+	// Do not replace a small delta on a large account with an even larger snapshot.
+	docCount, snapshotBytes, complete, err := repo.SnapshotBodySizeHint(uid, maxIncrementalPullChanges+1)
+	if err != nil || !complete || docCount > count || snapshotBytes > maxAutomaticSnapshotBodyBytes {
+		return false, err
+	}
+	leaves, err := repo.LeafRevisionHeadersPage(uid, "", "", true, count+1)
+	return len(leaves) > 0 && len(leaves) <= count, err
+}
 
 // StreamChanges emits the existing complete changes response with bounded memory.
 // It never advances a device checkpoint; only the client can acknowledge a result.

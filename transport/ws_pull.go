@@ -125,18 +125,26 @@ func (h *WSHandler) sendPull(parent context.Context, peer *webSocketConnection, 
 	ctx, cancel := context.WithTimeout(parent, syncsvc.MaxPullDuration)
 	defer cancel()
 	started := time.Now()
+	snapshot := request.Snapshot
+	if !snapshot {
+		var err error
+		snapshot, err = h.sync.ShouldSnapshotPull(ctx, uid, request.Since, protocolVersion)
+		if err != nil {
+			return err
+		}
+	}
 	epoch, err := h.sync.SyncEpochContext(ctx)
 	if err != nil {
 		return err
 	}
-	message := syncsvc.ServerMessage{Type: "changes", SyncEpoch: epoch, Snapshot: request.Snapshot, Reset: request.Snapshot}
+	message := syncsvc.ServerMessage{Type: "changes", SyncEpoch: epoch, Snapshot: snapshot, Reset: snapshot}
 	stats, err := peer.writePull(ctx, message, func(consume syncsvc.ChangeConsumer) (int64, error) {
-		if request.Snapshot {
+		if snapshot {
 			return h.sync.StreamSnapshotChanges(ctx, uid, consume)
 		}
 		return h.sync.StreamChanges(ctx, uid, request.Since, protocolVersion, consume)
 	})
 	uidHash := sha256.Sum256([]byte(uid))
-	log.Printf("[Pull] user=%x snapshot=%t since=%d changes=%d bytes=%d duration=%s error=%v", uidHash[:6], request.Snapshot, request.Since, stats.changes, stats.bytes, time.Since(started).Round(time.Millisecond), err)
+	log.Printf("[Pull] user=%x protocol=%d snapshot=%t requested_snapshot=%t since=%d changes=%d bytes=%d duration=%s error=%v", uidHash[:6], protocolVersion, snapshot, request.Snapshot, request.Since, stats.changes, stats.bytes, time.Since(started).Round(time.Millisecond), err)
 	return err
 }
