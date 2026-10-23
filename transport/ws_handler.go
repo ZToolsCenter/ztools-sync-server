@@ -93,6 +93,8 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	peer := newWebSocketConnection(conn)
 	defer peer.Close()
+	connectionContext, cancelConnection, messages := peer.readMessages(r.Context())
+	defer cancelConnection()
 
 	var uid string
 	var deviceID string
@@ -113,8 +115,17 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		var msg syncsvc.ClientMessage
-		if err := conn.ReadJSON(&msg); err != nil {
+		if connectionContext.Err() != nil {
 			return
+		}
+		select {
+		case <-connectionContext.Done():
+			return
+		case next, ok := <-messages:
+			if !ok {
+				return
+			}
+			msg = next
 		}
 		switch msg.Type {
 		case "auth":
@@ -157,28 +168,10 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				_ = peer.WriteJSON(syncsvc.ServerMessage{Type: "error", Message: "Not authenticated"})
 				continue
 			}
-			if msg.Snapshot {
-				changes, err := h.sync.SnapshotChanges(uid)
-				if err != nil {
-					_ = peer.WriteJSON(syncsvc.ServerMessage{Type: "error", Message: err.Error()})
-					continue
-				}
-				seq, _ := h.sync.MaxSeq(uid)
-				h.observeActivity(uid, deviceID, r)
-				if err := peer.WriteChanges(syncsvc.ServerMessage{Type: "changes", Changes: changes, Seq: seq, Snapshot: true, Reset: true, SyncEpoch: h.sync.SyncEpoch()}); err != nil {
-					return
-				}
-				continue
-			}
-			changes, seq, err := h.sync.Changes(uid, msg.Since, clientProtocolVersion)
-			if err != nil {
-				_ = peer.WriteJSON(syncsvc.ServerMessage{Type: "error", Message: err.Error()})
-				continue
-			}
-			h.observeActivity(uid, deviceID, r)
-			if err := peer.WriteChanges(syncsvc.ServerMessage{Type: "changes", Changes: changes, Seq: seq, SyncEpoch: h.sync.SyncEpoch()}); err != nil {
+			if err := h.sendPull(connectionContext, peer, uid, msg, clientProtocolVersion); err != nil {
 				return
 			}
+			h.observeActivity(uid, deviceID, r)
 		case "get_checkpoint":
 			if uid == "" {
 				_ = peer.WriteJSON(syncsvc.ServerMessage{Type: "error", Message: "Not authenticated"})

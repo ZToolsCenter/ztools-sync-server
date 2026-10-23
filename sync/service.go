@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,13 +15,13 @@ import (
 
 	"github.com/ZToolsCenter/ztools-sync-server/models"
 	"github.com/ZToolsCenter/ztools-sync-server/repository"
-	"github.com/ZToolsCenter/ztools-sync-server/store"
 )
 
 const MaxAttachmentSize = 10 * 1024 * 1024
 const maxPushTransactionChanges = 20
 const maxPushTransactionAttempts = 3
 const maxConcurrentPushes = 16
+const maxConcurrentPulls = 4
 
 var ErrAttachmentDigestMismatch = errors.New("attachment digest mismatch")
 var ErrInvalidCheckpoint = errors.New("invalid checkpoint")
@@ -41,11 +42,13 @@ type Service struct {
 	repo                      *repository.Repository
 	documentLocks             *documentLockManager
 	pushSlots                 chan struct{}
+	pulls                     *pullLimiter
 	retryableTransactionError func(error) bool
 }
 
 type ServiceOptions struct {
 	MaxConcurrentPushes       int
+	MaxConcurrentPulls        int
 	RetryableTransactionError func(error) bool
 }
 
@@ -137,10 +140,14 @@ func NewServiceWithOptions(repo *repository.Repository, options ServiceOptions) 
 	if options.RetryableTransactionError == nil {
 		options.RetryableTransactionError = func(error) bool { return false }
 	}
+	if options.MaxConcurrentPulls <= 0 {
+		options.MaxConcurrentPulls = maxConcurrentPulls
+	}
 	return &Service{
 		repo:                      repo,
 		documentLocks:             newDocumentLockManager(),
 		pushSlots:                 make(chan struct{}, options.MaxConcurrentPushes),
+		pulls:                     newPullLimiter(options.MaxConcurrentPulls),
 		retryableTransactionError: options.RetryableTransactionError,
 	}
 }
@@ -150,12 +157,18 @@ func (s *Service) MaxSeq(uid string) (int64, error) {
 }
 
 func (s *Service) SyncEpoch() int64 {
-	meta, err := s.repo.SyncMeta("sync_epoch")
+	value, _ := s.SyncEpochContext(context.Background())
+	return value
+}
+
+// SyncEpochContext reads pull metadata within the same cancellation deadline.
+func (s *Service) SyncEpochContext(ctx context.Context) (int64, error) {
+	meta, err := s.repo.WithContext(ctx).SyncMeta("sync_epoch")
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	value, _ := strconv.ParseInt(meta.Value, 10, 64)
-	return value
+	return value, nil
 }
 
 func (s *Service) ServerInstanceID() string {
@@ -360,67 +373,18 @@ func isRetryableMySQLTransactionError(err error) bool {
 }
 
 func (s *Service) Changes(uid string, since int64, clientProtocolVersion int) ([]FullChangeEntry, int64, error) {
-	logs, err := s.repo.ChangelogSince(uid, since)
+	changes := make([]FullChangeEntry, 0)
+	seq, err := s.StreamChanges(context.Background(), uid, since, clientProtocolVersion, collectChanges(&changes))
 	if err != nil {
 		return nil, since, err
 	}
-	changes := make([]FullChangeEntry, 0, len(logs))
-	histories := newRevisionHistoryReader(s.repo, uid)
-	for _, entry := range logs {
-		if clientProtocolVersion >= store.ProtocolVersion || entry.ProtocolVersion >= store.ProtocolVersion {
-			revision, err := s.repo.Revision(uid, entry.DocID, entry.Rev)
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				continue
-			}
-			if err != nil {
-				return nil, since, err
-			}
-			attachments, err := s.repo.RevisionAttachments(uid, entry.DocID, entry.Rev)
-			if err != nil {
-				return nil, since, err
-			}
-			history, err := histories.History(entry.DocID, entry.Rev)
-			if err != nil {
-				return nil, since, err
-			}
-			changes = append(changes, buildDocChangeFromRevisionWithAttachmentsAndHistory(revision, attachments, history, entry.Seq, entry.WinnerRev, parseResolution(entry.Resolution)))
-		}
-	}
-	lastSeq := since
-	if len(changes) > 0 {
-		lastSeq = changes[len(changes)-1].Seq
-	}
-	return changes, lastSeq, nil
+	return changes, seq, nil
 }
 
 func (s *Service) SnapshotChanges(uid string) ([]FullChangeEntry, error) {
-	rows, err := s.repo.LeafRevisions(uid)
-	if err != nil {
+	changes := make([]FullChangeEntry, 0)
+	if _, err := s.StreamSnapshotChanges(context.Background(), uid, collectChanges(&changes)); err != nil {
 		return nil, err
-	}
-	grouped := map[string][]models.DocumentRevision{}
-	for _, row := range rows {
-		grouped[row.DocID] = append(grouped[row.DocID], row)
-	}
-	changes := make([]FullChangeEntry, 0, len(rows))
-	histories := newRevisionHistoryReader(s.repo, uid)
-	for _, leaves := range grouped {
-		winner := chooseWinner(leaves)
-		winnerRev := ""
-		if winner != nil {
-			winnerRev = winner.Rev
-		}
-		for _, revision := range leaves {
-			attachments, err := s.repo.RevisionAttachments(uid, revision.DocID, revision.Rev)
-			if err != nil {
-				return nil, err
-			}
-			history, err := histories.History(revision.DocID, revision.Rev)
-			if err != nil {
-				return nil, err
-			}
-			changes = append(changes, buildDocChangeFromRevisionWithAttachmentsAndHistory(revision, attachments, history, 0, winnerRev, nil))
-		}
 	}
 	return changes, nil
 }

@@ -39,12 +39,10 @@ func (c *webSocketConnection) WriteJSON(value interface{}) error {
 }
 
 /**
- * Close 在等待当前写操作结束后关闭底层 WebSocket 连接。
+ * Close 立即关闭底层连接，使阻塞的读写和拉取能够及时取消。
  * @returns 关闭成功时返回 nil，否则返回网络错误。
  */
 func (c *webSocketConnection) Close() error {
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
 	return c.conn.Close()
 }
 

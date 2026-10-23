@@ -92,7 +92,7 @@ func TestPullHistoriesReuseMetadataWithoutChangingRevisions(t *testing.T) {
 			return
 		}
 		queries++
-		if strings.Contains(tx.Statement.SQL.String(), "doc_json") || strings.Contains(tx.Statement.SQL.String(), "ORDER BY") {
+		if strings.Contains(tx.Statement.SQL.String(), "doc_json") || strings.Contains(tx.Statement.SQL.String(), "generation") {
 			t.Error("history query loaded bodies or sorted the full history")
 		}
 	}); err != nil {

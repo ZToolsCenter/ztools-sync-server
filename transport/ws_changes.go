@@ -39,17 +39,7 @@ func (c *webSocketConnection) WriteChanges(message syncsvc.ServerMessage) error 
 func encodeChanges(writer io.Writer, message syncsvc.ServerMessage) error {
 	// Marshal only the small envelope; its fields retain the existing wire contract.
 	changes := message.Changes
-	message.Changes = nil
-	metadata, err := json.Marshal(message)
-	if err != nil {
-		return err
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(metadata, &fields); err != nil {
-		return err
-	}
-	delete(fields, "changes")
-	metadata, err = json.Marshal(fields)
+	metadata, err := changesMetadata(message)
 	if err != nil {
 		return err
 	}
